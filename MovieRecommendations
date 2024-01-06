@@ -1,0 +1,62 @@
+!pip install surprise
+import pandas as pd
+from surprise import Dataset, Reader
+from surprise import SVD
+from surprise.model_selection import train_test_split
+from surprise import accuracy
+
+# Load the MovieLens dataset (you can download it from: https://grouplens.org/datasets/movielens/)
+# Here, I assume you have a CSV file with columns 'userId', 'movieId', 'rating'
+# You can adjust the file path accordingly.
+file_path = 'path/to/movielens_ratings.csv'
+df = pd.read_csv(file_path)
+
+# Define the reader
+reader = Reader(rating_scale=(1, 5))
+
+# Load the dataset
+data = Dataset.load_from_df(df[['userId', 'movieId', 'rating']], reader)
+
+# Split the dataset into train and test sets
+trainset, testset = train_test_split(data, test_size=0.25, random_state=42)
+
+# Build the collaborative filtering model using SVD
+model = SVD()
+model.fit(trainset)
+
+# Make predictions on the test set
+predictions = model.test(testset)
+
+# Evaluate the model using Mean Squared Error (MSE)
+mse = accuracy.mse(predictions)
+print(f'Mean Squared Error: {mse}')
+
+# Recommend movies for a specific user (user with id 1)
+user_id = 1
+user_movies = df[df['userId'] == user_id]['movieId'].unique()
+user_unrated_movies = df[~df['movieId'].isin(user_movies)]['movieId'].unique()
+
+# Create a dataframe with unrated movies for the user
+user_unrated_df = pd.DataFrame({'userId': [user_id] * len(user_unrated_movies),
+                                'movieId': user_unrated_movies,
+                                'rating': [0] * len(user_unrated_movies)})
+
+# Transform the unrated dataframe into a Surprise dataset
+user_unrated_data = Dataset.load_from_df(user_unrated_df[['userId', 'movieId', 'rating']], reader)
+
+# Build a test set from the unrated data
+user_unrated_testset = user_unrated_data.build_full_trainset().build_testset()
+
+# Get predictions for the unrated movies
+user_unrated_predictions = model.test(user_unrated_testset)
+
+# Sort the predictions and recommend top N movies
+n_recommendations = 10
+user_top_recommendations = sorted(user_unrated_predictions, key=lambda x: x.est, reverse=True)[:n_recommendations]
+
+# Display the top recommendations
+print(f'\nTop {n_recommendations} Movie Recommendations for User {user_id}:')
+for prediction in user_top_recommendations:
+    movie_id = prediction.iid
+    estimated_rating = prediction.est
+    print(f'MovieID: {movie_id}, Estimated Rating: {estimated_rating}')
